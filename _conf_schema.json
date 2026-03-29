@@ -1,0 +1,240 @@
+{
+  "openlist": {
+    "type": "object",
+    "description": "OpenList 连接配置",
+    "items": {
+      "base_url": {
+        "type": "string",
+        "description": "OpenList 服务地址",
+        "default": "http://host.docker.internal:5244",
+        "obvious_hint": true
+      },
+      "download_base_url": {
+        "type": "string",
+        "description": "OpenList 下载地址",
+        "hint": "可选。用于生成文件下载链接的外部地址。如果 OpenList API 地址和浏览器里实际可下载的地址不同，请填写这里，例如 http://100.64.0.24:5244。",
+        "default": ""
+      },
+      "token": {
+        "type": "string",
+        "description": "OpenList Token",
+        "hint": "如果这些目录允许访客访问可以留空；否则建议填写可访问这些目录的 Token。",
+        "default": ""
+      },
+      "username": {
+        "type": "string",
+        "description": "OpenList 用户名",
+        "hint": "可选。没有填写 Token 时，可用普通账号自动登录。",
+        "default": ""
+      },
+      "password": {
+        "type": "string",
+        "description": "OpenList 登录密码",
+        "hint": "这里是 OpenList 账号密码，不是资源文件密码。",
+        "default": ""
+      },
+      "request_timeout_seconds": {
+        "type": "int",
+        "description": "OpenList 接口超时秒数",
+        "default": 60
+      },
+      "offline_fallback_path": {
+        "type": "string",
+        "description": "离线兜底中转目录",
+        "hint": "可选。填写一个在 OpenList 里可写的目录，例如 /temp/send，用于 SimpleHttp 离线兜底。",
+        "default": ""
+      },
+      "offline_fallback_timeout_seconds": {
+        "type": "int",
+        "description": "离线兜底等待秒数",
+        "hint": "插件等待 OpenList 离线任务和中转文件完成的最长时间。",
+        "default": 300
+      }
+    }
+  },
+  "napcat": {
+    "type": "object",
+    "description": "NapCat 群文件流上传配置",
+    "items": {
+      "group_file_stream_enabled": {
+        "type": "bool",
+        "description": "是否启用群文件 Stream 上传",
+        "hint": "开启后，群里发送文件会优先走 NapCat 官方推荐的 upload_file_stream，再调用群文件上传，适合跨机器部署和大文件。",
+        "default": false
+      },
+      "ws_url": {
+        "type": "string",
+        "description": "NapCat WebSocket 服务端地址",
+        "hint": "例如 ws://127.0.0.1:3001。请在 NapCat 网络配置里新建一个 WebSocket 服务端后填写这里。",
+        "default": ""
+      },
+      "access_token": {
+        "type": "string",
+        "description": "NapCat WebSocket Token",
+        "hint": "如果 NapCat WebSocket 服务端配置了 token，就填这里；没配可以留空。",
+        "default": ""
+      },
+      "stream_chunk_size_kb": {
+        "type": "int",
+        "description": "Stream 分片大小 KB",
+        "hint": "NapCat 官方示例默认 64KB。通常保持默认即可。",
+        "default": 64
+      },
+      "stream_file_retention_seconds": {
+        "type": "int",
+        "description": "NapCat 临时文件保留秒数",
+        "hint": "上传到 NapCat 的临时文件保留多久，默认 30 秒。",
+        "default": 30
+      }
+    }
+  },
+  "sources": {
+    "type": "template_list",
+    "description": "检索目录，最多 5 个",
+    "templates": {
+      "openlist_mount": {
+        "name": "OpenList 路径",
+        "hint": "直接填写已经挂载到 OpenList 的目录。",
+        "items": {
+          "enabled": {
+            "type": "bool",
+            "description": "是否启用",
+            "default": true
+          },
+          "label": {
+            "type": "string",
+            "description": "来源名称",
+            "hint": "仅用于区分配置和日志，不显示在搜索结果里。",
+            "default": ""
+          },
+          "mount_path": {
+            "type": "string",
+            "description": "挂载路径",
+            "hint": "例如 /蓝奏云优享版 或 /资源。",
+            "default": ""
+          },
+          "search_path": {
+            "type": "string",
+            "description": "搜索起始目录",
+            "hint": "填 / 表示从挂载根目录开始，也可以填写子目录。",
+            "default": "/"
+          }
+        }
+      }
+    }
+  },
+  "activation": {
+    "type": "object",
+    "description": "群聊激活配置",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "是否开启群聊激活",
+        "hint": "开启后，群成员需要先发送正确激活码，才能在群里使用本插件。",
+        "default": false,
+        "obvious_hint": true
+      },
+      "auto_rotate_enabled": {
+        "type": "bool",
+        "description": "是否自动轮换激活码",
+        "hint": "开启后会按轮换小时数自动更新；关闭后只会保留当前激活码，直到你手动执行“更新激活码”。",
+        "default": true
+      },
+      "rotate_hours": {
+        "type": "int",
+        "description": "激活码轮换小时数",
+        "hint": "每次轮换都会生成新的激活包和新的激活码，旧激活自动失效。",
+        "default": 24
+      },
+      "prewarm_minutes": {
+        "type": "int",
+        "description": "提前预生成分钟数",
+        "hint": "距离轮换时间还有多久时，插件就开始后台生成并上传下一批激活码，避免到点时断档。",
+        "default": 30
+      },
+      "code_length": {
+        "type": "int",
+        "description": "激活码长度",
+        "hint": "建议 6 到 10 位。",
+        "default": 8
+      },
+      "quark_cookie": {
+        "type": "string",
+        "description": "夸克 Cookie",
+        "hint": "用于给已经上传到夸克目录里的激活包创建夸克原生分享链接。",
+        "default": ""
+      },
+      "quark_save_fid": {
+        "type": "string",
+        "description": "夸克上传目录 FID",
+        "hint": "这里要填写“最终上传目录”在夸克里的 FID，需要和下面的 OpenList 上传目录指向同一个实际目录。",
+        "default": ""
+      },
+      "openlist_mount_path": {
+        "type": "string",
+        "description": "OpenList 夸克挂载路径",
+        "hint": "填写挂载到 OpenList 里的夸克目录根路径，例如 /夸克。",
+        "default": "/"
+      },
+      "openlist_upload_path": {
+        "type": "string",
+        "description": "激活包上传子目录",
+        "hint": "相对于上面的挂载路径，例如 /激活包。插件会自动建目录并上传 zip。",
+        "default": "/激活包"
+      },
+      "notify_group_uid": {
+        "type": "string",
+        "description": "激活链接通知群 UID 列表",
+        "hint": "可选。可填写一个或多个目标群的 unified_msg_origin。多个群可用换行、英文逗号、中文逗号或分号分隔。每次生成新的激活链接后，机器人会自动往这些群各发一次新链接。建议在目标群发送 /sid 获取后原样填写。",
+        "default": ""
+      },
+      "quark_verify_ssl": {
+        "type": "bool",
+        "description": "是否校验夸克 HTTPS 证书",
+        "default": true
+      },
+      "quark_share_expired_type": {
+        "type": "int",
+        "description": "夸克分享有效期类型",
+        "hint": "默认 1，保持和你现有夸克分享习惯一致即可。",
+        "default": 1
+      }
+    }
+  },
+  "session_timeout_seconds": {
+    "type": "int",
+    "description": "无操作超时秒数",
+    "default": 600,
+    "obvious_hint": true
+  },
+  "scan_cache_ttl_seconds": {
+    "type": "int",
+    "description": "搜索缓存秒数",
+    "hint": "填 0 表示每次都重新请求 OpenList 搜索。",
+    "default": 300
+  },
+  "openlist_search_fetch_page_size": {
+    "type": "int",
+    "description": "OpenList 搜索预取数量",
+    "hint": "插件会分批拉回匹配结果，再在 QQ 里按每页 10 条显示。",
+    "default": 100
+  },
+  "file_prepare_interval_seconds": {
+    "type": "float",
+    "description": "文件调取间隔秒数",
+    "hint": "多人连续取文件时，任务会排队并按这个间隔一个个处理。",
+    "default": 2
+  },
+  "file_parent_scan_page_size": {
+    "type": "int",
+    "description": "父目录补查单页数量",
+    "hint": "当记录失效时，插件会重新扫描父目录来恢复真实文件路径。",
+    "default": 500
+  },
+  "file_parent_scan_max_pages": {
+    "type": "int",
+    "description": "父目录补查最大页数",
+    "hint": "恢复失效记录时，最多扫描多少页父目录。",
+    "default": 40
+  }
+}

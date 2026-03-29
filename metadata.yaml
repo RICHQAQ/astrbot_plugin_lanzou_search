@@ -1,0 +1,6 @@
+name: astrbot_plugin_lanzou_search
+display_name: 蓝奏优享检索
+desc: 基于 OpenList 的检索与群聊激活插件
+version: v1.4.0
+author: Codex
+repo: ""
