@@ -179,6 +179,9 @@
 
 上传插件压缩包时，保留这些文件即可：
 - `main.py`
+- `core/`
+- `clients/`
+- `services/`
 - `metadata.yaml`
 - `README.md`
 - `_conf_schema.json`
