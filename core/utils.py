@@ -277,7 +277,7 @@ def sanitize_filename(name: str) -> str:
     Returns:
         安全的文件名字符串
     """
-    cleaned = re.sub(r'[<>:"/\\\\|?*\\x00-\\x1f]', "_", str(name or "").strip())
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(name or "").strip())
     return cleaned or f"download_{uuid4().hex}"
 
 
