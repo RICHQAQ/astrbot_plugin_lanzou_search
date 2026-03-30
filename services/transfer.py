@@ -30,7 +30,6 @@ import asyncio
 import posixpath
 import shutil
 import time
-import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -38,6 +37,7 @@ from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
 import httpx
+import pyzipper
 
 import astrbot.api.message_components as Comp
 from astrbot.api import logger
@@ -64,6 +64,8 @@ from ..core.utils import (
     safe_int,
     sanitize_filename,
 )
+
+RETRY_ARCHIVE_PASSWORD = "123456abc"
 
 
 class TransferService:
@@ -1007,12 +1009,14 @@ class TransferService:
         archive_name = self._retry_archive_name(display_name)
         archive_path = (source_path.parent / archive_name).resolve()
         self._remove_partial_file(archive_path)
-        with zipfile.ZipFile(
+        with pyzipper.AESZipFile(
             archive_path,
             mode="w",
-            compression=zipfile.ZIP_DEFLATED,
-            compresslevel=9,
+            compression=pyzipper.ZIP_DEFLATED,
+            encryption=pyzipper.WZ_AES,
         ) as archive:
+            archive.setpassword(RETRY_ARCHIVE_PASSWORD.encode("utf-8"))
+            archive.setencryption(pyzipper.WZ_AES, nbits=256)
             archive.write(source_path, arcname=source_path.name)
         return archive_name, archive_path
 
