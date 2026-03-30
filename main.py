@@ -25,13 +25,14 @@ from typing import Any
 
 import httpx
 
-from astrbot.api import AstrBotConfig
+from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
 from .clients.openlist import OpenListClient
 from .core.constants import COMMAND_NAME
+from .core.event_utils import event_debug_snapshot
 from .core.utils import (
     extract_command_keyword,
     parse_activation_command,
@@ -169,10 +170,16 @@ class LanzouSearchPlugin(Star):
         Yields:
             搜索结果消息（可能多条，包含加载提示、结果列表等）
         """
+        logger.debug("lanzou_search command received: %s", event_debug_snapshot(event))
         await self.activation_service.remember_admin_notify_origin(event)
         if not await self.activation_service.ensure_group_activation_access(event):
+            logger.debug(
+                "lanzou_search command blocked by group activation: %s",
+                event_debug_snapshot(event),
+            )
             return
         keyword = extract_command_keyword(event.message_str, COMMAND_NAME)
+        logger.debug('lanzou_search extracted keyword="%s"', keyword)
         async for result in self.search_service.search_flow(event, keyword):
             yield result
 
@@ -191,23 +198,37 @@ class LanzouSearchPlugin(Star):
         Args:
             event: AstrBot 消息事件对象
         """
+        logger.debug(
+            "lanzou_search followup event received: %s", event_debug_snapshot(event)
+        )
         await self.activation_service.remember_admin_notify_origin(event)
         text = (event.message_str or "").strip()
         if not text:
+            logger.debug("lanzou_search followup ignored because text is empty")
             return
 
         # 优先处理激活命令
         activation_code = parse_activation_command(text)
         if activation_code is not None:
+            logger.debug(
+                'lanzou_search activation command detected text="%s" code="%s"',
+                text,
+                activation_code,
+            )
             await self.activation_service.handle_activation_command(
                 event, activation_code
             )
             return
         # 忽略搜索命令（由 lanzou_search 处理器单独处理）
         if parse_search_command(text) is not None:
+            logger.debug(
+                'lanzou_search followup ignored because it is a search command: "%s"',
+                text,
+            )
             return
 
         # 处理搜索会话的后续操作（选择文件、翻页、退出等）
+        logger.debug('lanzou_search dispatching followup text="%s"', text)
         await self.search_service.handle_followup(event, text)
 
     @filter.permission_type(filter.PermissionType.ADMIN)

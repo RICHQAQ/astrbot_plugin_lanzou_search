@@ -42,6 +42,7 @@ from ..core.constants import (
     PAGE_SIZE,
 )
 from ..core.event_utils import (
+    event_debug_snapshot,
     event_group_id,
     event_message_token,
     event_reply_component,
@@ -130,6 +131,11 @@ class SearchService:
             搜索结果消息（可能多条）
         """
         keyword = keyword.strip()
+        logger.debug(
+            'search_flow start keyword="%s" event=%s',
+            keyword,
+            event_debug_snapshot(event),
+        )
         if not keyword:
             yield event.plain_result(
                 "用法：sh 关键词\n"
@@ -166,6 +172,11 @@ class SearchService:
         if is_group_chat(event):
             thread = await self._create_group_search_thread(event, page_state)
             _, body = await self._build_group_render_page(thread, page_state)
+            logger.debug(
+                "search_flow group thread created thread=%s page=%s",
+                thread,
+                {"page": page_state.page, "total": page_state.total},
+            )
             if body:
                 yield self._group_results_chain(event, body)
             event.stop_event()
@@ -188,6 +199,7 @@ class SearchService:
             "updated_at": time.time(),
         }
         await self._set_private_search_session(session_key, session)
+        logger.debug("search_flow private session created session=%s", session)
         yield event.plain_result(self._render_private_page(session))
         event.stop_event()
 
@@ -201,17 +213,30 @@ class SearchService:
             event: 消息事件对象
             text: 用户发送的文本内容
         """
+        logger.debug(
+            'handle_followup received text="%s" event=%s',
+            text,
+            event_debug_snapshot(event),
+        )
         await self.prune_runtime_state()
 
         if is_group_chat(event):
             command = text.lower()
             is_numeric = bool(re.fullmatch(r"\d+", text))
             if command not in {"q", "退出", "n", "p"} and not is_numeric:
+                logger.debug(
+                    'handle_followup ignored unsupported group command="%s"', text
+                )
                 return
             render, thread = await self._resolve_group_render_from_reply(event)
             if not render or not thread:
+                logger.debug(
+                    'handle_followup group reply did not match any render for text="%s"',
+                    text,
+                )
                 return
             if not await self._ensure_group_access(event):
+                logger.debug("handle_followup group access denied")
                 return
             await self._handle_group_search_input(event, text)
             return
@@ -220,13 +245,24 @@ class SearchService:
         session_key = event_session_key(event)
         session = await self._get_private_search_session(session_key)
         if not session:
+            logger.debug(
+                "handle_followup private session missing session_key=%s", session_key
+            )
             return
         if str(session.get("sender_id", "")) != event_sender_id(event):
+            logger.debug(
+                "handle_followup private session sender mismatch session=%s event=%s",
+                session,
+                event_debug_snapshot(event),
+            )
             return
 
         command = text.lower()
         is_numeric = bool(re.fullmatch(r"\d+", text))
         if command not in {"q", "退出", "n", "p"} and not is_numeric:
+            logger.debug(
+                'handle_followup ignored unsupported private command="%s"', text
+            )
             return
 
         if not await self._consume_selection_event(event, session_key):
@@ -316,6 +352,11 @@ class SearchService:
             event: 消息事件对象
             text: 用户发送的文本内容
         """
+        logger.debug(
+            'handle_group_search_input start text="%s" event=%s',
+            text,
+            event_debug_snapshot(event),
+        )
         command = text.lower()
         is_numeric = bool(re.fullmatch(r"\d+", text))
         if command not in {"q", "退出", "n", "p"} and not is_numeric:
@@ -793,6 +834,7 @@ class SearchService:
         }
         async with self._state_lock:
             self._group_search_renders[str(render["id"])] = render
+        logger.debug("stored group render render=%s", render)
         return dict(render)
 
     async def _close_group_search_thread(self, search_id: str) -> bool:
@@ -894,20 +936,54 @@ class SearchService:
         """
         reply_component = event_reply_component(event)
         if reply_component is None:
+            logger.debug(
+                "resolve_group_render_from_reply missing reply component event=%s",
+                event_debug_snapshot(event),
+            )
             return None, None
 
         self_id = event_self_id(event)
         reply_sender_id = str(getattr(reply_component, "sender_id", "") or "").strip()
         if self_id and reply_sender_id and self_id != reply_sender_id:
+            logger.debug(
+                "resolve_group_render_from_reply reply sender mismatch self_id=%s reply_sender_id=%s event=%s",
+                self_id,
+                reply_sender_id,
+                event_debug_snapshot(event),
+            )
             return None, None
 
         group_id = event_group_id(event)
         sender_id = event_sender_id(event)
         if not group_id or not sender_id:
+            logger.debug(
+                "resolve_group_render_from_reply missing group or sender group_id=%s sender_id=%s event=%s",
+                group_id,
+                sender_id,
+                event_debug_snapshot(event),
+            )
             return None, None
 
         reply_body = reply_body_text(reply_component)
         if not reply_body:
+            logger.debug(
+                "resolve_group_render_from_reply empty reply body reply=%s event=%s",
+                {
+                    "reply_id": str(getattr(reply_component, "id", "") or "").strip(),
+                    "reply_sender_id": reply_sender_id,
+                    "reply_message_str": str(
+                        getattr(reply_component, "message_str", "")
+                        or getattr(reply_component, "text", "")
+                        or ""
+                    ).strip(),
+                    "reply_chain_len": len(
+                        getattr(reply_component, "chain", None)
+                        or getattr(reply_component, "Chain", None)
+                        or []
+                    ),
+                },
+                event_debug_snapshot(event),
+            )
             return None, None
         reply_hash = hash_session_body(reply_body)
         reply_time = safe_int(getattr(reply_component, "time", 0), 0, minimum=0)
@@ -922,6 +998,13 @@ class SearchService:
             ]
 
         if not candidates:
+            logger.debug(
+                "resolve_group_render_from_reply no candidates group_id=%s sender_id=%s reply_hash=%s reply_body=%s",
+                group_id,
+                sender_id,
+                reply_hash,
+                reply_body,
+            )
             return None, None
 
         # 按时间戳匹配排序
@@ -942,14 +1025,33 @@ class SearchService:
                 str(render.get("search_id", ""))
             )
             if not thread:
+                logger.debug(
+                    "resolve_group_render_from_reply thread missing for render=%s",
+                    render,
+                )
                 continue
             if (
                 str(thread.get("sender_id", "")) != sender_id
                 or str(thread.get("group_id", "")) != group_id
             ):
+                logger.debug(
+                    "resolve_group_render_from_reply thread mismatch render=%s thread=%s",
+                    render,
+                    thread,
+                )
                 continue
+            logger.debug(
+                "resolve_group_render_from_reply matched render=%s thread=%s",
+                render,
+                thread,
+            )
             return render, thread
 
+        logger.debug(
+            "resolve_group_render_from_reply exhausted candidates without match group_id=%s sender_id=%s",
+            group_id,
+            sender_id,
+        )
         return None, None
 
     async def _build_group_render_page(

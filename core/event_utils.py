@@ -27,7 +27,28 @@ def event_sender_id(event: Any) -> str:
     try:
         return str(event.get_sender_id() or "").strip()
     except Exception:
-        return ""
+        pass
+    for obj in (
+        getattr(event, "message_obj", None),
+        getattr(event, "sender", None),
+        event,
+    ):
+        if obj is None:
+            continue
+        try:
+            value = str(getattr(obj, "sender_id", "") or "").strip()
+        except Exception:
+            value = ""
+        if value:
+            return value
+        try:
+            sender = getattr(obj, "sender", None)
+            value = str(getattr(sender, "user_id", "") or "").strip()
+        except Exception:
+            value = ""
+        if value:
+            return value
+    return ""
 
 
 def event_group_id(event: Any) -> str:
@@ -44,7 +65,17 @@ def event_group_id(event: Any) -> str:
     try:
         return str(event.get_group_id() or "").strip()
     except Exception:
-        return ""
+        pass
+    for obj in (getattr(event, "message_obj", None), event):
+        if obj is None:
+            continue
+        try:
+            value = str(getattr(obj, "group_id", "") or "").strip()
+        except Exception:
+            value = ""
+        if value:
+            return value
+    return ""
 
 
 def event_sender_scope(event: Any) -> str:
@@ -79,6 +110,14 @@ def event_self_id(event: Any) -> str:
     Returns:
         机器人自身 ID 字符串
     """
+    getter = getattr(event, "get_self_id", None)
+    if callable(getter):
+        try:
+            value = str(getter() or "").strip()
+        except Exception:
+            value = ""
+        if value:
+            return value
     for obj in (getattr(event, "message_obj", None), event):
         if obj is None:
             continue
@@ -184,13 +223,23 @@ def event_message_components(event: Any) -> list[Any]:
         message_obj = getattr(event, "message_obj", None)
     except Exception:
         message_obj = None
-    if message_obj is None:
-        return []
-    try:
-        components = getattr(message_obj, "message", None)
-    except Exception:
-        components = None
-    return components if isinstance(components, list) else []
+    if message_obj is not None:
+        try:
+            components = getattr(message_obj, "message", None)
+        except Exception:
+            components = None
+        if isinstance(components, list):
+            return components
+
+    getter = getattr(event, "get_messages", None)
+    if callable(getter):
+        try:
+            components = getter()
+        except Exception:
+            components = None
+        if isinstance(components, list):
+            return components
+    return []
 
 
 def event_reply_component(event: Any) -> Any | None:
@@ -207,6 +256,9 @@ def event_reply_component(event: Any) -> Any | None:
     """
     for component in event_message_components(event):
         if isinstance(component, Comp.Reply):
+            return component
+        component_type = getattr(component, "type", None)
+        if str(component_type or "").lower() == "reply":
             return component
     return None
 
@@ -270,10 +322,15 @@ def reply_body_text(reply_component: Any) -> str:
     Returns:
         引用消息的纯文本内容（已规范化）
     """
-    Chain = getattr(reply_component, "Chain", None) or []
+    chain = (
+        getattr(reply_component, "chain", None)
+        or getattr(reply_component, "Chain", None)
+        or getattr(reply_component, "message", None)
+        or []
+    )
     parts: list[str] = []
-    if isinstance(Chain, list):
-        for component in Chain:
+    if isinstance(chain, list):
+        for component in chain:
             if isinstance(component, Comp.At):
                 continue
             if isinstance(component, Comp.Plain):
@@ -286,5 +343,51 @@ def reply_body_text(reply_component: Any) -> str:
     if body:
         return body
     return normalize_session_body(
-        str(getattr(reply_component, "message_str", "") or "")
+        str(
+            getattr(reply_component, "message_str", "")
+            or getattr(reply_component, "text", "")
+            or ""
+        )
     )
+
+
+def event_debug_snapshot(event: Any) -> dict[str, Any]:
+    """构建事件调试快照
+
+    仅提取轻量字段，避免日志中输出过大的消息体。
+    """
+    reply = event_reply_component(event)
+    components = event_message_components(event)
+    component_types: list[str] = []
+    for component in components:
+        component_type = getattr(component, "type", None)
+        if component_type:
+            component_types.append(str(component_type))
+        else:
+            component_types.append(type(component).__name__)
+
+    snapshot = {
+        "platform": str(getattr(event, "platform_meta", None) or ""),
+        "session": event_session_key(event),
+        "sender_id": event_sender_id(event),
+        "group_id": event_group_id(event),
+        "self_id": event_self_id(event),
+        "is_group": is_group_chat(event),
+        "message_str": str(getattr(event, "message_str", "") or "").strip(),
+        "message_token": event_message_token(event),
+        "component_types": component_types,
+        "has_reply": reply is not None,
+        "reply_id": str(getattr(reply, "id", "") or "").strip() if reply else "",
+        "reply_sender_id": (
+            str(getattr(reply, "sender_id", "") or "").strip() if reply else ""
+        ),
+        "reply_message_str": (
+            str(
+                getattr(reply, "message_str", "") or getattr(reply, "text", "") or ""
+            ).strip()
+            if reply
+            else ""
+        ),
+        "reply_body": reply_body_text(reply) if reply else "",
+    }
+    return snapshot
