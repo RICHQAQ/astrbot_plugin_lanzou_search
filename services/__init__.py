@@ -1,1 +1,1 @@
-"""Stateful domain services used by the plugin."""
+"""有状态的业务服务模块，包含搜索、文件传输、激活码管理等核心业务逻辑"""

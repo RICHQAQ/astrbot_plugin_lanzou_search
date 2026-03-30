@@ -1,1 +1,1 @@
-"""External clients used by the plugin."""
+"""外部客户端模块，封装与 OpenList、夸克网盘、NapCat 等外部服务的通信逻辑"""

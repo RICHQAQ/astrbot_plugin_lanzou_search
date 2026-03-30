@@ -1,1 +1,1 @@
-"""Shared models, constants, and helper functions for the plugin."""
+"""共享数据模型、常量定义和工具函数"""
