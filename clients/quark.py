@@ -289,6 +289,7 @@ class QuarkPanClient:
         Returns:
             元组，包含 (md5_hex, sha1_hex)
         """
+
         def run() -> tuple[str, str]:
             md5_hash = hashlib.md5()
             sha1_hash = hashlib.sha1()

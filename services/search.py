@@ -147,7 +147,7 @@ class SearchService:
             event.stop_event()
             return
 
-        yield event.plain_result(f"正在检索"{keyword}"，请稍后...")
+        yield event.plain_result(f'正在检索"{keyword}"，请稍后...')
 
         try:
             page_state = await self._search_page(keyword, 1)
@@ -158,7 +158,7 @@ class SearchService:
             return
 
         if page_state.total <= 0:
-            yield event.plain_result(f"没有找到包含"{keyword}"的资源。")
+            yield event.plain_result(f'没有找到包含"{keyword}"的资源。')
             event.stop_event()
             return
 
