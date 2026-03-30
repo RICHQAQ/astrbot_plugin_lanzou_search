@@ -30,6 +30,7 @@ import asyncio
 import posixpath
 import shutil
 import time
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -422,6 +423,31 @@ class TransferService:
         # 尝试普通群文件上传
         if await self._try_upload_group_file(event, display_name, target_path):
             return
+
+        # 群文件失败后，尝试重新压缩再发送
+        if is_group_chat(event):
+            await event.send(
+                event.plain_result("群文件发送失败，正在尝试压缩后发送，请稍候")
+            )
+            try:
+                compressed_name, compressed_path = self._build_retry_archive(
+                    display_name, target_path
+                )
+            except Exception:
+                logger.exception("build retry archive failed for %s", target_path)
+            else:
+                if await self._try_send_local_file_component(
+                    event, compressed_name, compressed_path
+                ):
+                    return
+                if await self._try_upload_group_file_stream(
+                    event, compressed_name, compressed_path
+                ):
+                    return
+                if await self._try_upload_group_file(
+                    event, compressed_name, compressed_path
+                ):
+                    return
 
         # 尝试私聊文件发送
         if await self._try_send_private_file_fallback(
@@ -973,6 +999,28 @@ class TransferService:
         except Exception:
             logger.exception("send local file component failed for %s", target_path)
             return False
+
+    def _build_retry_archive(
+        self, display_name: str, source_path: Path
+    ) -> tuple[str, Path]:
+        """构建用于重试发送的压缩包"""
+        archive_name = self._retry_archive_name(display_name)
+        archive_path = (source_path.parent / archive_name).resolve()
+        self._remove_partial_file(archive_path)
+        with zipfile.ZipFile(
+            archive_path,
+            mode="w",
+            compression=zipfile.ZIP_DEFLATED,
+            compresslevel=9,
+        ) as archive:
+            archive.write(source_path, arcname=source_path.name)
+        return archive_name, archive_path
+
+    def _retry_archive_name(self, display_name: str) -> str:
+        """生成重试发送用的压缩包文件名"""
+        source_name = Path(str(display_name or "").strip() or "file")
+        stem = source_name.stem or source_name.name or "file"
+        return sanitize_filename(f"{stem}_repacked.zip")
 
     async def _try_send_group_remote_file(
         self,
