@@ -375,9 +375,10 @@ class TransferService:
         """下载文件到本地后发送
 
         尝试多种发送方式：
-        1. NapCat 流式上传（群聊）
-        2. 普通群文件上传
-        3. 私聊文件发送（回退到私聊）
+        1. 直接使用 AstrBot 文件组件发送（优先）
+        2. NapCat 流式上传（群聊）
+        3. 普通群文件上传
+        4. 私聊文件发送（回退到私聊）
 
         Args:
             event: 消息事件对象
@@ -410,6 +411,10 @@ class TransferService:
                 action=f"download file {resolved_path}",
             )
 
+        # 优先尝试 AstrBot 文件组件
+        if await self._try_send_local_file_component(event, display_name, target_path):
+            return
+
         # 尝试流式上传
         if await self._try_upload_group_file_stream(event, display_name, target_path):
             return
@@ -425,10 +430,7 @@ class TransferService:
             await event.send(event.plain_result("群内直发失败，已改为私发，请查收"))
             return
 
-        # 最后尝试通过消息组件发送
-        await event.send(
-            event.chain_result([Comp.File(name=display_name, file=str(target_path))])
-        )
+        raise RuntimeError(f"all file send attempts failed for {target_path}")
 
     async def _prefer_openlist_file_link(
         self,
@@ -955,6 +957,21 @@ class TransferService:
             return True
         except Exception:
             logger.exception("send remote file failed for %s", resolved_path)
+            return False
+
+    async def _try_send_local_file_component(
+        self, event: AstrMessageEvent, name: str, target_path: Path
+    ) -> bool:
+        """尝试通过 AstrBot 文件组件发送本地文件"""
+        if not target_path.exists():
+            return False
+        try:
+            await event.send(
+                event.chain_result([Comp.File(file=str(target_path), name=name)])
+            )
+            return True
+        except Exception:
+            logger.exception("send local file component failed for %s", target_path)
             return False
 
     async def _try_send_group_remote_file(
