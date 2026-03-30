@@ -37,7 +37,6 @@ from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
 import httpx
-import pyzipper
 
 import astrbot.api.message_components as Comp
 from astrbot.api import logger
@@ -64,8 +63,6 @@ from ..core.utils import (
     safe_int,
     sanitize_filename,
 )
-
-RETRY_ARCHIVE_PASSWORD = "123456abc"
 
 
 class TransferService:
@@ -426,30 +423,12 @@ class TransferService:
         if await self._try_upload_group_file(event, display_name, target_path):
             return
 
-        # 群文件失败后，尝试重新压缩再发送
+        # 群文件失败后，回退为 OpenList 下载链接
         if is_group_chat(event):
-            await event.send(
-                event.plain_result("群文件发送失败，正在尝试压缩后发送，请稍候")
-            )
-            try:
-                compressed_name, compressed_path = self._build_retry_archive(
-                    display_name, target_path
-                )
-            except Exception:
-                logger.exception("build retry archive failed for %s", target_path)
-            else:
-                if await self._try_send_local_file_component(
-                    event, compressed_name, compressed_path
-                ):
-                    return
-                if await self._try_upload_group_file_stream(
-                    event, compressed_name, compressed_path
-                ):
-                    return
-                if await self._try_upload_group_file(
-                    event, compressed_name, compressed_path
-                ):
-                    return
+            if await self._try_send_group_download_link_fallback(
+                event, display_name, download_url
+            ):
+                return
 
         # 尝试私聊文件发送
         if await self._try_send_private_file_fallback(
@@ -1002,30 +981,6 @@ class TransferService:
             logger.exception("send local file component failed for %s", target_path)
             return False
 
-    def _build_retry_archive(
-        self, display_name: str, source_path: Path
-    ) -> tuple[str, Path]:
-        """构建用于重试发送的压缩包"""
-        archive_name = self._retry_archive_name(display_name)
-        archive_path = (source_path.parent / archive_name).resolve()
-        self._remove_partial_file(archive_path)
-        with pyzipper.AESZipFile(
-            archive_path,
-            mode="w",
-            compression=pyzipper.ZIP_DEFLATED,
-            encryption=pyzipper.WZ_AES,
-        ) as archive:
-            archive.setpassword(RETRY_ARCHIVE_PASSWORD.encode("utf-8"))
-            archive.setencryption(pyzipper.WZ_AES, nbits=256)
-            archive.write(source_path, arcname=source_path.name)
-        return archive_name, archive_path
-
-    def _retry_archive_name(self, display_name: str) -> str:
-        """生成重试发送用的压缩包文件名"""
-        source_name = Path(str(display_name or "").strip() or "file")
-        stem = source_name.stem or source_name.name or "file"
-        return sanitize_filename(f"{stem}_repacked.zip")
-
     async def _try_send_group_remote_file(
         self,
         event: AstrMessageEvent,
@@ -1157,6 +1112,28 @@ class TransferService:
         except Exception:
             logger.exception(
                 "send_group_msg file resource failed for %s via %s", name, resource
+            )
+            return False
+
+    async def _try_send_group_download_link_fallback(
+        self, event: AstrMessageEvent, name: str, download_url: str
+    ) -> bool:
+        """群文件失败后，回退为发送下载链接"""
+        if not is_group_chat(event):
+            return False
+        link = str(download_url or "").strip()
+        if not link:
+            return False
+        try:
+            await event.send(
+                event.plain_result(
+                    f"群文件发送失败，请直接点击链接下载：\n文件：{name}\n链接：{link}"
+                )
+            )
+            return True
+        except Exception:
+            logger.exception(
+                "send group download link fallback failed for %s via %s", name, link
             )
             return False
 
